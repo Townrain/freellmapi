@@ -5,6 +5,8 @@ import * as catalogModelState from '../migrations/20260627_000002_catalog_model_
 import * as requestAggregates from '../migrations/20260628_120000_request_aggregates.js';
 import * as githubGpt41Context from '../migrations/20260630_000001_github_gpt41_context.js';
 
+import * as migration20260704_194607_cloudflare_model_update from '../migrations/20260704_194607_cloudflare_model_update.js';
+
 export interface MigrationModule {
   up(db: Database.Database): void;
   down(db: Database.Database): void;
@@ -27,4 +29,5 @@ export const DEFAULT_MIGRATIONS: readonly DefaultMigration[] = [
   { filename: CATALOG_MODEL_STATE_FILENAME, module: catalogModelState },
   { filename: REQUEST_AGGREGATES_FILENAME, module: requestAggregates },
   { filename: GITHUB_GPT41_CONTEXT_FILENAME, module: githubGpt41Context },
+  { filename: '20260704_194607_cloudflare_model_update.ts', module: migration20260704_194607_cloudflare_model_update },
 ];
