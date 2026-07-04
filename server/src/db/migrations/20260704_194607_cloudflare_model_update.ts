@@ -11,6 +11,9 @@
 // All state changes use UPDATE (enabled toggles); no DELETE/INSERT on existing
 // tables to keep the roundtrip test stable (auto-increment IDs must survive
 // down→up unchanged). New-model INSERT is idempotent via INSERT OR IGNORE.
+// Namespace fixes handle the edge case where the catalog sync already inserted
+// a row with the correct namespace (DELETE old instead of UPDATE to avoid
+// UNIQUE conflict).
 // DOWN: reversible — re-enables k2.5, reverts namespaces, disables new models.
 
 import type Database from 'better-sqlite3';
@@ -51,6 +54,29 @@ function addNewModelsToFallback(db: Database.Database, platform: string, modelId
   for (let i = 0; i < missing.length; i++) addFb.run(missing[i].id, maxPriority + i + 1);
 }
 
+/**
+ * Rename a model ID. If the destination already exists (e.g. from a catalog
+ * sync), delete the source row instead — avoids UNIQUE constraint conflicts.
+ */
+function renameModelId(
+  db: Database.Database,
+  platform: string,
+  oldModelId: string,
+  newModelId: string,
+): void {
+  const exists = db.prepare(`
+    SELECT 1 FROM models WHERE platform = ? AND model_id = ?
+  `).get(platform, newModelId);
+
+  if (exists) {
+    // Target already exists (catalog sync edge case). Remove the stale source.
+    db.prepare(`DELETE FROM fallback_config WHERE model_db_id IN (SELECT id FROM models WHERE platform = ? AND model_id = ?)`).run(platform, oldModelId);
+    db.prepare(`DELETE FROM models WHERE platform = ? AND model_id = ?`).run(platform, oldModelId);
+  } else {
+    db.prepare(`UPDATE models SET model_id = ? WHERE platform = ? AND model_id = ?`).run(newModelId, platform, oldModelId);
+  }
+}
+
 export function up(db: Database.Database): void {
   // ── 1) Disable deprecated kimi-k2.5 ──
   // CF changelog 2026-05-30: k2.5 aliases to k2.6. Keep row for rollback, disable it.
@@ -59,19 +85,8 @@ export function up(db: Database.Database): void {
 
   // ── 2) Fix namespace errors ──
   // CF's actual catalog uses @cf/deepseek/ and @cf/ibm/, not @cf/deepseek-ai/ or @cf/ibm-granite/.
-  db.prepare(`
-    UPDATE models
-       SET model_id = '@cf/deepseek/deepseek-r1-distill-qwen-32b'
-     WHERE platform = 'cloudflare'
-       AND model_id = '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'
-  `).run();
-
-  db.prepare(`
-    UPDATE models
-       SET model_id = '@cf/ibm/granite-4.0-h-micro'
-     WHERE platform = 'cloudflare'
-       AND model_id = '@cf/ibm-granite/granite-4.0-h-micro'
-  `).run();
+  renameModelId(db, 'cloudflare', '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', '@cf/deepseek/deepseek-r1-distill-qwen-32b');
+  renameModelId(db, 'cloudflare', '@cf/ibm-granite/granite-4.0-h-micro', '@cf/ibm/granite-4.0-h-micro');
 
   // ── 3) Add new models (roundtrip-safe: INSERT OR IGNORE + re-enable) ──
   // Cloudflare Workers AI — 10K Neurons/day shared free pool.
@@ -90,7 +105,6 @@ export function up(db: Database.Database): void {
   // Re-enable in case down() previously disabled them (roundtrip-safe).
   setModelsEnabled(db, 'cloudflare', NEW_MODELS, 1);
   addNewModelsToFallback(db, 'cloudflare', NEW_MODELS);
-  // Fallback rows may already exist (from initial up); ensure they're enabled.
   setFallbackEnabled(db, 'cloudflare', NEW_MODELS, 1);
 }
 
@@ -102,19 +116,8 @@ export function down(db: Database.Database): void {
   setFallbackEnabled(db, 'cloudflare', NEW_MODELS, 0);
 
   // ── 2) Revert namespace fixes ──
-  db.prepare(`
-    UPDATE models
-       SET model_id = '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'
-     WHERE platform = 'cloudflare'
-       AND model_id = '@cf/deepseek/deepseek-r1-distill-qwen-32b'
-  `).run();
-
-  db.prepare(`
-    UPDATE models
-       SET model_id = '@cf/ibm-granite/granite-4.0-h-micro'
-     WHERE platform = 'cloudflare'
-       AND model_id = '@cf/ibm/granite-4.0-h-micro'
-  `).run();
+  renameModelId(db, 'cloudflare', '@cf/deepseek/deepseek-r1-distill-qwen-32b', '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b');
+  renameModelId(db, 'cloudflare', '@cf/ibm/granite-4.0-h-micro', '@cf/ibm-granite/granite-4.0-h-micro');
 
   // ── 3) Re-enable kimi-k2.5 ──
   setModelsEnabled(db, 'cloudflare', ['@cf/moonshotai/kimi-k2.5'], 1);
