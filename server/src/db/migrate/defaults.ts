@@ -7,6 +7,8 @@ import * as githubGpt41Context from '../migrations/20260630_000001_github_gpt41_
 
 import * as migration20260704_194607_cloudflare_model_update from '../migrations/20260704_194607_cloudflare_model_update.js';
 
+import * as migration20260704_204242_disable_mimo_v25 from '../migrations/20260704_204242_disable_mimo_v25.js';
+
 export interface MigrationModule {
   up(db: Database.Database): void;
   down(db: Database.Database): void;
@@ -30,4 +32,5 @@ export const DEFAULT_MIGRATIONS: readonly DefaultMigration[] = [
   { filename: REQUEST_AGGREGATES_FILENAME, module: requestAggregates },
   { filename: GITHUB_GPT41_CONTEXT_FILENAME, module: githubGpt41Context },
   { filename: '20260704_194607_cloudflare_model_update.ts', module: migration20260704_194607_cloudflare_model_update },
+  { filename: '20260704_204242_disable_mimo_v25.ts', module: migration20260704_204242_disable_mimo_v25 },
 ];
