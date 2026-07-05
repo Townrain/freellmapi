@@ -93,19 +93,26 @@ export function up(db: Database.Database): void {
   const NEW_MODELS = ['@cf/moonshotai/kimi-k2.7-code', '@cf/zai-org/glm-5.2'];
 
   const insert = db.prepare(`
-    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window, supports_tools, supports_vision)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null]> = [
-    ['cloudflare', '@cf/moonshotai/kimi-k2.7-code', 'Kimi K2.7 Code (CF)', 2,  11, 'Frontier', null, null, null, null, '~10-20M', 262144],
-    ['cloudflare', '@cf/zai-org/glm-5.2',           'GLM-5.2 (CF)',        5,  11, 'Frontier', null, null, null, null, '~10-20M', 262144],
+  const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null, number, number]> = [
+    ['cloudflare', '@cf/moonshotai/kimi-k2.7-code', 'Kimi K2.7 Code (CF)', 2,  11, 'Frontier', null, null, null, null, '~10-20M', 262144, 1, 0],
+    ['cloudflare', '@cf/zai-org/glm-5.2',           'GLM-5.2 (CF)',        5,  11, 'Frontier', null, null, null, null, '~10-20M', 262144, 1, 0],
   ];
   for (const a of additions) insert.run(...a);
-
   // Re-enable in case down() previously disabled them (roundtrip-safe).
   setModelsEnabled(db, 'cloudflare', NEW_MODELS, 1);
   addNewModelsToFallback(db, 'cloudflare', NEW_MODELS);
   setFallbackEnabled(db, 'cloudflare', NEW_MODELS, 1);
+
+  // Ensure supports_tools is set for models that support tool calling.
+  // INSERT OR IGNORE skips the row if catalog sync inserted it first (with defaults),
+  // so we need an explicit UPDATE to fix the flag.
+  db.prepare(`
+    UPDATE models SET supports_tools = 1
+    WHERE platform = 'cloudflare' AND model_id IN (?, ?)
+  `).run(...NEW_MODELS);
 }
 
 export function down(db: Database.Database): void {
